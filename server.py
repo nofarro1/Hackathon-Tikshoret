@@ -14,7 +14,7 @@ socket_player1 = None
 socket_player2 = None
 answer =''
 class State (Enum):
-    waiting = 1
+    player1 = 1
     game_mode = 2
 state =State.waiting
 

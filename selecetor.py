@@ -4,12 +4,7 @@ import time
 
 from config import *
 
-username_player_1 = None
-username_player_2 = None
-ans_recieved = None
-addr_sender = None
-conn1 = None
-conn2 = None
+
 
 sel = selectors.DefaultSelector()
 

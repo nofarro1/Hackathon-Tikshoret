@@ -8,7 +8,7 @@ from threading import *
 
 
 HOST = 'localhost'  # The server's hostname or IP address
-PORT = 1236          # The port used by the server
+PORT = 1237         # The port used by the server
 
 def handle_ans_func():
     global end_game
@@ -22,7 +22,7 @@ def handle_ans_func():
     client.sendall(str(ans).encode('utf-8'))
 
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
-    client.connect((HOST, PORT))
+    client.connect((HOST, server_tcp_port))
     client.sendall(b'ofar-nofir')
     welcome = client.recv(1024).decode('utf-8')
     print(welcome)

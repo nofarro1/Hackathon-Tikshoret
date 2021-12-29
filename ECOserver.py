@@ -5,74 +5,134 @@ from config import *
 from threading import Thread
 import time
 
-HOST = '127.0.0.1'  # Standard loopback interface address (localhost)
-server_udp = None
-conn_player_1 = None
-conn_player_2 = None
-username_player_1 = None
-username_player_2 = None
-sel = selectors.DefaultSelector()
+
 
 def send_offers():
     global server_udp
     offer_message = b"abcddcba213117"
-    print(server_udp)
     while count_clients < 2:
         server_udp.sendto(offer_message, ('<broadcast>', client_port))
         time.sleep(1)
-    print("2 clients connected")
 
-# def handle_accept():
-#     global count_clients
-#     conn, addr = server_tcp.accept()
-#     count_clients += 1
-#     sel.register(conn, selectors.EVENT_READ, )
+def accept(sock, mask):
+    global count_clients
+    if count_clients < 2:
+        conn, addr = sock.accept()
+        count_clients += 1
+        sel.register(conn, selectors.EVENT_READ, read)
+
+def read(conn, mask):
+    global username_player_1
+    global username_player_2
+    global conn1
+    global conn2
+
+    data = conn.recv(1024)
+    if data:
+        if not username_player_1:
+            username_player_1 = data
+            conn1 = conn
+        else:
+            conn2 = conn
+            sel.unregister(conn1)
+            sel.unregister(conn2)
+            sel.register(conn1, selectors.EVENT_WRITE, write)
+            sel.register(conn2, selectors.EVENT_WRITE, write)
+            username_player_2 = data
+    else:
+        sel.unregister(conn)
+        conn.close()
 
 
-def handle_player_1():
-    pass
+def write_summary():
+    if ans_recieved == '4':
+        if conn1.getpeername() == addr_sender:
+            winner = username_player_1
+        else:
+            winner = username_player_2
+    else:
+        if conn1.getpeername() == addr_sender:
+            winner = username_player_2
+        else:
+            winner = username_player_1
+    msg = "Game over!\nThe correct answer was 4!\nCongragulations to the winner: {}".format(winner)
+    conn1.sendall(msg.encode('utf-8'))
+    conn2.sendall(msg.encode('utf-8'))
 
 
-def handle_player_2():
-    pass
+
+def read_player_answer(conn, mask):
+    global ans_recieved
+    global addr_sender
+    global end_game
+
+    if not ans_recieved:
+        try:
+            ans_recieved = conn.recv(1024).decode('utf-8')
+            addr_sender = conn.getpeername()
+            if ans_recieved:
+                sel.unregister(conn)
+                write_summary()
+        except:
+            return
+    else:
+        sel.unregister(conn)
+
+def print_draw():
+    msg = b"Game over!\nThe correct answer was 4!\nThe game ended with a draw"
+    conn1.sendall(msg)
+    conn2.sendall(msg)
+    sel.unregister(conn1)
+    sel.unregister(conn2)
+
+def write(conn, mask):
+    global username_player_1
+    global username_player_2
+    global end_game
+    welcome_message = """Welcome to Quick Maths.
+Player 1: {}
+Player 2: {}
+==
+Please answer the following question as fast as you can:
+How much is 2+2?""".format(username_player_1, username_player_2)
+    conn.sendall(welcome_message.encode('utf-8'))
+    if not end_game:
+        end_game = time.time() + 10
+    sel.unregister(conn)
+    sel.register(conn, selectors.EVENT_WRITE, read_player_answer)
+
+def tcp_server(sock):
+    # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    #     sock.bind(('localhost', 1236))
+    #     sock.listen(2)
+        sel.register(sock, selectors.EVENT_READ, accept)
+        while not username_player_2:
+            events = sel.select()
+            for key, mask in events:
+                callback = key.data
+                callback(key.fileobj, mask)
+
+        time.sleep(10)
+        while not end_game or time.time() < end_game:
+            events = sel.select()
+            for key, mask in events:
+                callback = key.data
+                callback(key.fileobj, mask)
+        if not ans_recieved:
+            print_draw()
 
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_tcp:
-    server_tcp.bind((HOST, server_tcp_port))
-    server_tcp.listen()
-    print("Server started, listening on Ip address 127.0.0.1")
-
-    # open Udp Server and sends it to the udp-server-thread
-    server_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-    # Enable broadcasting mode
-    server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    udp_server_thread = Thread(target=send_offers)
-    udp_server_thread.start()
-
-
-    conn_player_1, addr1 = server_tcp.accept()
-    username_player_1, addr1 = conn_player_1.recvfrom(1024)
-    conn_player_2, addr2 = server_tcp.accept()
-    username_player_2, addr2 = conn_player_2.recvfrom(1024)
-    player_1_handler = Thread(target=handle_player_1)
-    player_2_handler = Thread(target=handle_player_2)
-    count_clients = 2;
-# sleep 10 seconds before starting the game
-    time.sleep(10)
-
-    # with conn:
-    #     print('Connected by', addr)
-    #     while True:
-    #         data = conn.recv(1024)
-    #         if not data:
-    #             break
-    #         conn.sendall(data)
-    #
-    # with conn2:
-    #     print('Connected by', addr2)
-    #     while True:
-    #         data = conn2.recv(1024)
-    #         print(data)
-    #         if not data:
-    #             break
-    #         conn2.sendall(data)
+if __name__ == "__main__":
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_tcp:
+        server_tcp.bind((HOST, server_tcp_port))
+        server_tcp.setblocking(False)
+        server_tcp.listen()
+        print("Server started, listening on Ip address 127.0.0.1")
+        while True:
+            # open Udp Server and sends it to the udp-server-thread
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as server_udp:
+                # Enable broadcasting mode
+                server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                udp_server_thread = Thread(target=send_offers)
+                udp_server_thread.start()
+                tcp_server(server_tcp)

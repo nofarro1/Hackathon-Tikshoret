@@ -1,56 +1,49 @@
 import socket
+import struct
 from config import *
 import time
 import sys
 from threading import *
 
-client_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+while True:
+    client_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Enable port reusage so we will be able to run multiple clients and servers on single (host, port).
+    client_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # Enable broadcasting mode
+    client_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    client_udp.bind(("", server_tcp_port))
+    print("Client started, listening for offer requests...\n")
+    while True:
+        data, addr = client_udp.recvfrom(1024)
+        if data[:4] == bytes([0xab, 0xcd, 0xdc, 0xba]) and data[4] == 0x2:
+            break
+    server_port = struct.unpack('>H', data[5:7])[0]
+    print("Received offer from: {}, attempting to connect...".format(str(addr[0])))
+    # conn_addr = client_udp.getsockname()
+    # print(conn_addr)
 
-# Enable port reusage so we will be able to run multiple clients and servers on single (host, port).
-client_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    def handle_ans_func():
+        global end_game
+        ans = None
+        while not ans:
+            if end_game and time.time() > end_game:
+                return
+            else:
+                ans = sys.stdin.readline()[0]
+        client.sendall(str(ans).encode('utf-8'))
 
-# Enable broadcasting mode
-client_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-
-client_udp.bind(("", client_port))
-print("Client started, listening for offer requests...")
-data, addr = client_udp.recvfrom(1024)
-
-print("Received offer from: {}, attempting to connect...".format(str(addr[0])))
-
-# with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client_tcp:
-#     print(addr)
-#     client_tcp.connect(('127.0.0.1', client_port))
-#     client_tcp.sendall(b'Ofar/n')
-#     data = client_tcp.recv(1024)
-
-#!/usr/bin/env python3
-
-# HOST = 'localhost'  # The server's hostname or IP address
-# PORT = 1237         # The port used by the server
-
-def handle_ans_func():
-    global end_game
-    ans = None
-    while not ans:
-        if end_game and time.time() > end_game:
-            return
-        else:
-            ans = sys.stdin.readline()[0]
-            print(str(ans))
-    client.sendall(str(ans).encode('utf-8'))
-
-#tcp client
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
-    print("try to connct to: host {}, port {}".format(HOST, server_tcp_port))
-    client.connect((HOST, server_tcp_port))
-    name = b'ofir'
-    client.sendall(name)
-    print(name)
-    welcome = client.recv(1024).decode('utf-8')
-    print(welcome)
-    handle_ans = Thread(target=handle_ans_func)
-    handle_ans.setDaemon(True)
-    handle_ans.start()
-    summary = client.recv(1024).decode('utf-8')
-    print(summary)
+    #tcp client
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as client:
+        # print("try to connct to: host {}, port {}".format(str(addr[0]), server_tcp_port))
+        # print("type of conn_addr is {}{}".format(addr[0], addr[1]))
+        client.connect((addr[0], server_tcp_port))
+        name = b'ewewe'
+        client.sendall(name)
+        welcome = client.recv(1024).decode('utf-8')
+        print(welcome)
+        handle_ans = Thread(target=handle_ans_func)
+        handle_ans.setDaemon(True)
+        handle_ans.start()
+        summary = client.recv(1024).decode('utf-8')
+        print(summary)
+        print("Server disconnected, listening for offer requests...\n")

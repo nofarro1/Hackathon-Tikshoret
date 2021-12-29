@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import selectors
 import socket
+
 from config import *
 from threading import Thread
 import time
@@ -9,10 +10,11 @@ import time
 
 def send_offers():
     global server_udp
-    offer_message = b"abcddcba213117"
     while count_clients < 2:
-        server_udp.sendto(offer_message, ('<broadcast>', client_port))
+        server_udp.sendto(offer_msg, ('<broadcast>', server_tcp_port))
         time.sleep(1)
+    server_udp.close()
+
 
 def accept(sock, mask):
     global count_clients
@@ -21,13 +23,14 @@ def accept(sock, mask):
         count_clients += 1
         sel.register(conn, selectors.EVENT_READ, read)
 
+
+
 def read(conn, mask):
     global username_player_1
     global username_player_2
     global conn1
     global conn2
-
-    data = conn.recv(1024)
+    data = conn.recv(1024).decode('utf-8')
     if data:
         if not username_player_1:
             username_player_1 = data
@@ -60,7 +63,6 @@ def write_summary():
     conn2.sendall(msg.encode('utf-8'))
 
 
-
 def read_player_answer(conn, mask):
     global ans_recieved
     global addr_sender
@@ -78,12 +80,14 @@ def read_player_answer(conn, mask):
     else:
         sel.unregister(conn)
 
+
 def print_draw():
     msg = b"Game over!\nThe correct answer was 4!\nThe game ended with a draw"
     conn1.sendall(msg)
     conn2.sendall(msg)
     sel.unregister(conn1)
     sel.unregister(conn2)
+
 
 def write(conn, mask):
     global username_player_1
@@ -101,38 +105,52 @@ How much is 2+2?""".format(username_player_1, username_player_2)
     sel.unregister(conn)
     sel.register(conn, selectors.EVENT_WRITE, read_player_answer)
 
-def tcp_server(sock):
-    # with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-    #     sock.bind(('localhost', 1236))
-    #     sock.listen(2)
-        sel.register(sock, selectors.EVENT_READ, accept)
-        while not username_player_2:
-            events = sel.select()
-            for key, mask in events:
-                callback = key.data
-                callback(key.fileobj, mask)
 
-        time.sleep(10)
-        while not end_game or time.time() < end_game:
-            events = sel.select()
-            for key, mask in events:
-                callback = key.data
-                callback(key.fileobj, mask)
-        if not ans_recieved:
-            print_draw()
+def tcp_server(sock):
+    while not username_player_2:
+        events = sel.select()
+        for key, mask in events:
+            callback = key.data
+            callback(key.fileobj, mask)
+
+    time.sleep(10)
+    while not end_game or time.time() < end_game:
+        events = sel.select()
+        for key, mask in events:
+            callback = key.data
+            callback(key.fileobj, mask)
+    if not ans_recieved:
+        print_draw()
 
 
 if __name__ == "__main__":
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_tcp:
-        server_tcp.bind((HOST, server_tcp_port))
+        server_tcp.bind((host_server, server_tcp_port))
         server_tcp.setblocking(False)
-        server_tcp.listen()
-        print("Server started, listening on Ip address 127.0.0.1")
+        server_tcp.listen(2)
+        print("Server started, listening on Ip address 127.0.0.1\n")
+        # print("server_tcp.getsockname() = {}".format(server_tcp.getsockname()))
+        # print(server_tcp)
+        sel.register(server_tcp, selectors.EVENT_READ, accept)
         while True:
-            # open Udp Server and sends it to the udp-server-thread
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP) as server_udp:
-                # Enable broadcasting mode
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server_udp:
+                # restart the game #####
+                ans_recieved = None
+                addr_sender = None
+                conn1 = None
+                conn2 = None
+                conn_player_1 = None
+                conn_player_2 = None
+                username_player_1 = None
+                username_player_2 = None
+                end_game = None
+                count_clients = 0
+                #####################
+
+                server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 server_udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                server_udp.settimeout(0.2)
                 udp_server_thread = Thread(target=send_offers)
                 udp_server_thread.start()
                 tcp_server(server_tcp)
+                print("Game over, sending out offer requests...\n")
